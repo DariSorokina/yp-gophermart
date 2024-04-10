@@ -81,7 +81,7 @@ func Run(accrualSystem *AccrualSystem) {
 		ticker := time.NewTicker(1 * time.Second)
 		for {
 			<-ticker.C
-			go accrualSystem.app.GetAccrualOrdersNumbersInfo(orderNumbersChannel)
+			accrualSystem.app.GetAccrualOrdersNumbersInfo(orderNumbersChannel)
 		}
 	}()
 

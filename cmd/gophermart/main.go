@@ -22,7 +22,7 @@ func main() {
 
 	storage, err := database.NewPostgresqlDB(flagConfig.FlagDatabaseURI, l)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer storage.Close()
 

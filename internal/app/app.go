@@ -2,15 +2,10 @@ package app
 
 import (
 	"context"
-	"errors"
 
 	"github.com/DariSorokina/yp-gophermart.git/internal/database"
 	"github.com/DariSorokina/yp-gophermart.git/internal/logger"
 	"github.com/DariSorokina/yp-gophermart.git/internal/models"
-)
-
-var (
-	ErrNotEnoughLoyaltyBonuses = errors.New("postgresql: not enough loyalty bonuses")
 )
 
 type App struct {
@@ -43,20 +38,11 @@ func (app *App) GetOrdersNumbers(ctx context.Context, userID int) (orders []mode
 }
 
 func (app *App) GetLoyaltyBalance(ctx context.Context, userID int) (balance models.BalanceInfo, err error) {
-	balance, err = app.db.GetLoyaltyBalance(ctx, userID)
+	balance, err = app.db.GetLoyaltyBalance(ctx, nil, userID)
 	return
 }
 
 func (app *App) WithdrawLoyaltyBonuses(ctx context.Context, userID int, withdrawRequest models.WithdrawRequest) (err error) {
-	balance, err := app.db.GetLoyaltyBalance(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	if balance.CurrentBalance < withdrawRequest.Sum {
-		return ErrNotEnoughLoyaltyBonuses
-	}
-
 	err = app.db.WithdrawLoyaltyBonuses(ctx, userID, withdrawRequest)
 	return err
 }
@@ -69,7 +55,7 @@ func (app *App) GetWithdrawalsInfo(ctx context.Context, userID int) (orders []mo
 // accrual system
 func (app *App) UpdateAccrualInfo(orderAccrualInfoChannel chan models.OrderAccrualInfo) {
 	for orderAccrualInfo := range orderAccrualInfoChannel {
-		go app.db.UpdateAccrualInfo(orderAccrualInfo)
+		app.db.UpdateAccrualInfo(orderAccrualInfo)
 	}
 }
 

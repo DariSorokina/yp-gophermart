@@ -21,6 +21,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var (
+	ErrNotEnoughLoyaltyBonuses = errors.New("postgresql: not enough loyalty bonuses")
+)
+
 type handlers struct {
 	app        *app.App
 	flagConfig *config.FlagConfig
@@ -246,7 +250,7 @@ func (handlers *handlers) withdrawLoyaltyBonusesHandler(res http.ResponseWriter,
 	err = handlers.app.WithdrawLoyaltyBonuses(ctx, userIDInt, withdrawRequest)
 
 	switch {
-	case errors.Is(err, app.ErrNotEnoughLoyaltyBonuses):
+	case errors.Is(err, ErrNotEnoughLoyaltyBonuses):
 		res.WriteHeader(http.StatusPaymentRequired)
 	case err != nil:
 		res.WriteHeader(http.StatusInternalServerError)

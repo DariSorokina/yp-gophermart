@@ -28,6 +28,10 @@ const (
 	getAccrualStatusQuery       = `SELECT order_id FROM content.orders WHERE status = 'NEW' OR status = 'PROCESSING';`
 )
 
+var (
+	ErrNotEnoughLoyaltyBonuses = errors.New("postgresql: not enough loyalty bonuses")
+)
+
 type PostgresqlDB struct {
 	db  *sql.DB
 	log *logger.Logger
@@ -142,8 +146,16 @@ func (postgresqlDB *PostgresqlDB) GetOrdersNumbers(ctx context.Context, userID i
 	return orders, err
 }
 
-func (postgresqlDB *PostgresqlDB) GetLoyaltyBalance(ctx context.Context, userID int) (balance models.BalanceInfo, err error) {
-	rows, err := postgresqlDB.db.QueryContext(ctx, getLoyaltyBalanceQuery, userID)
+func (postgresqlDB *PostgresqlDB) GetLoyaltyBalance(ctx context.Context, tx *sql.Tx, userID int) (balance models.BalanceInfo, err error) {
+
+	var rows *sql.Rows
+
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, getLoyaltyBalanceQuery, userID)
+	} else {
+		rows, err = postgresqlDB.db.QueryContext(ctx, getLoyaltyBalanceQuery, userID)
+	}
+
 	if err != nil {
 		postgresqlDB.log.Sugar().Errorf("Failed to execute a query getLoyaltyBalanceQuery: %s", err)
 		return balance, err
@@ -187,7 +199,23 @@ func (postgresqlDB *PostgresqlDB) GetLoyaltyBalance(ctx context.Context, userID 
 }
 
 func (postgresqlDB *PostgresqlDB) WithdrawLoyaltyBonuses(ctx context.Context, userID int, withdrawRequest models.WithdrawRequest) (err error) {
-	result, err := postgresqlDB.db.ExecContext(ctx, withdrawLoyaltyBonusesQuery, userID, withdrawRequest.OrderNumber, withdrawRequest.Sum*(-1))
+
+	tx, err := postgresqlDB.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	balance, err := postgresqlDB.GetLoyaltyBalance(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+
+	if balance.CurrentBalance < withdrawRequest.Sum {
+		return ErrNotEnoughLoyaltyBonuses
+	}
+
+	result, err := tx.ExecContext(ctx, withdrawLoyaltyBonusesQuery, userID, withdrawRequest.OrderNumber, withdrawRequest.Sum*(-1))
 	if err != nil {
 		postgresqlDB.log.Sugar().Errorf("Failed to execute a query withdrawLoyaltyBonusesQuery: %s", err)
 		return err
@@ -199,6 +227,11 @@ func (postgresqlDB *PostgresqlDB) WithdrawLoyaltyBonuses(ctx context.Context, us
 		log.Println(err.Error())
 		return err
 	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
