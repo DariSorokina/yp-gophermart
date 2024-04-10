@@ -16,16 +16,17 @@ import (
 )
 
 const (
-	registerQuery               = `INSERT INTO content.users (user_login, encrypted_password) VALUES ($1, $2) RETURNING user_id;`
-	loginQuery                  = `SELECT user_id, encrypted_password FROM content.users WHERE user_login = $1;`
-	postOrderNumberQuery        = `INSERT INTO content.orders (user_id, order_id, accrual, status, flag) VALUES ($1, $2, 0, 'NEW', 'accrue');`
-	getUserIDQuery              = `SELECT user_id FROM content.orders WHERE order_id = $1`
-	getOrdersNumbersQuery       = `SELECT order_id, COALESCE(accrual, 0) AS accrual, status, uploaded_at FROM content.orders WHERE user_id = $1 ORDER BY uploaded_at ASC;`
-	getLoyaltyBalanceQuery      = `SELECT accrual FROM content.orders WHERE user_id = $1;`
-	withdrawLoyaltyBonusesQuery = `INSERT INTO content.orders (user_id, order_id, accrual, flag) VALUES ($1, $2, $3, 'withdraw');`
-	withdrawalsInfoQuery        = `SELECT order_id, accrual, uploaded_at FROM content.orders WHERE user_id = $1 AND accrual < 0 ORDER BY uploaded_at ASC;`
-	updateAccuralQuery          = `UPDATE content.orders SET accrual = $1, status = $2 WHERE order_id = $3 AND flag = 'accrue';`
-	getAccrualStatusQuery       = `SELECT order_id FROM content.orders WHERE status = 'NEW' OR status = 'PROCESSING';`
+	registerQuery                  = `INSERT INTO content.users (user_login, encrypted_password) VALUES ($1, $2) RETURNING user_id;`
+	loginQuery                     = `SELECT user_id, encrypted_password FROM content.users WHERE user_login = $1;`
+	postOrderNumberQuery           = `INSERT INTO content.orders (user_id, order_id, accrual, status, flag) VALUES ($1, $2, 0, 'NEW', 'accrue');`
+	getUserIDQuery                 = `SELECT user_id FROM content.orders WHERE order_id = $1`
+	getOrdersNumbersQuery          = `SELECT order_id, COALESCE(accrual, 0) AS accrual, status, uploaded_at FROM content.orders WHERE user_id = $1 ORDER BY uploaded_at ASC;`
+	getLoyaltyBalanceQuery         = `SELECT accrual FROM content.orders WHERE user_id = $1;`
+	getLoyaltyBalanceBlockingQuery = `SELECT accrual FROM content.orders WHERE user_id = $1 FOR UPDATE;`
+	withdrawLoyaltyBonusesQuery    = `INSERT INTO content.orders (user_id, order_id, accrual, flag) VALUES ($1, $2, $3, 'withdraw');`
+	withdrawalsInfoQuery           = `SELECT order_id, accrual, uploaded_at FROM content.orders WHERE user_id = $1 AND accrual < 0 ORDER BY uploaded_at ASC;`
+	updateAccuralQuery             = `UPDATE content.orders SET accrual = $1, status = $2 WHERE order_id = $3 AND flag = 'accrue';`
+	getAccrualStatusQuery          = `SELECT order_id FROM content.orders WHERE status = 'NEW' OR status = 'PROCESSING' LIMIT 100;`
 )
 
 var (
@@ -132,12 +133,6 @@ func (postgresqlDB *PostgresqlDB) GetOrdersNumbers(ctx context.Context, userID i
 		orders = append(orders, order)
 	}
 
-	rerr := rows.Close()
-	if rerr != nil {
-		postgresqlDB.log.Sugar().Errorf("Close error in GetOrdersNumbers method: %s", rerr)
-		return orders, rerr
-	}
-
 	if err := rows.Err(); err != nil {
 		postgresqlDB.log.Sugar().Errorf("The last error encountered by Rows.Scan in GetOrdersNumbers method: %s", err)
 		return orders, err
@@ -151,7 +146,7 @@ func (postgresqlDB *PostgresqlDB) GetLoyaltyBalance(ctx context.Context, tx *sql
 	var rows *sql.Rows
 
 	if tx != nil {
-		rows, err = tx.QueryContext(ctx, getLoyaltyBalanceQuery, userID)
+		rows, err = tx.QueryContext(ctx, getLoyaltyBalanceBlockingQuery, userID)
 	} else {
 		rows, err = postgresqlDB.db.QueryContext(ctx, getLoyaltyBalanceQuery, userID)
 	}
@@ -182,12 +177,6 @@ func (postgresqlDB *PostgresqlDB) GetLoyaltyBalance(ctx context.Context, tx *sql
 		balance.Withdrawn = withdrawn
 	default:
 		balance.Withdrawn = withdrawn * (-1)
-	}
-
-	rerr := rows.Close()
-	if rerr != nil {
-		postgresqlDB.log.Sugar().Errorf("Close error in GetLoyaltyBalance method: %s", rerr)
-		return balance, rerr
 	}
 
 	if err := rows.Err(); err != nil {
@@ -252,11 +241,6 @@ func (postgresqlDB *PostgresqlDB) GetWithdrawalsInfo(ctx context.Context, userID
 		orders = append(orders, order)
 	}
 
-	rerr := rows.Close()
-	if rerr != nil {
-		postgresqlDB.log.Sugar().Errorf("Close error in GetWithdrawalsInfo method: %s", rerr)
-	}
-
 	if err := rows.Err(); err != nil {
 		postgresqlDB.log.Sugar().Errorf("The last error encountered by Rows.Scan in GetWithdrawalsInfo method: %s", err)
 		log.Fatal(err)
@@ -288,16 +272,16 @@ func (postgresqlDB *PostgresqlDB) GetAccrualOrdersNumbersInfo(orderNumbersChanne
 	defer rows.Close()
 
 	var order string
+	var orderSlice []string
 	for rows.Next() {
 		if err := rows.Scan(&order); err != nil {
 			postgresqlDB.log.Sugar().Errorf("Failed to scan order information in GetAccrualOrdersNumbersInfo method: %s", err)
 		}
-		orderNumbersChannel <- order
+		orderSlice = append(orderSlice, order)
 	}
 
-	rerr := rows.Close()
-	if rerr != nil {
-		postgresqlDB.log.Sugar().Errorf("Close error in GetAccrualOrdersNumbersInfo method: %s", rerr)
+	for _, order := range orderSlice {
+		orderNumbersChannel <- order
 	}
 
 	if err := rows.Err(); err != nil {

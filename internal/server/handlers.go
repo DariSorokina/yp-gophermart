@@ -13,16 +13,13 @@ import (
 
 	"github.com/DariSorokina/yp-gophermart.git/internal/app"
 	"github.com/DariSorokina/yp-gophermart.git/internal/config"
+	"github.com/DariSorokina/yp-gophermart.git/internal/database"
 	"github.com/DariSorokina/yp-gophermart.git/internal/logger"
 	"github.com/DariSorokina/yp-gophermart.git/internal/models"
 	"github.com/DariSorokina/yp-gophermart.git/internal/utils"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
-)
-
-var (
-	ErrNotEnoughLoyaltyBonuses = errors.New("postgresql: not enough loyalty bonuses")
 )
 
 type handlers struct {
@@ -250,7 +247,7 @@ func (handlers *handlers) withdrawLoyaltyBonusesHandler(res http.ResponseWriter,
 	err = handlers.app.WithdrawLoyaltyBonuses(ctx, userIDInt, withdrawRequest)
 
 	switch {
-	case errors.Is(err, ErrNotEnoughLoyaltyBonuses):
+	case errors.Is(err, database.ErrNotEnoughLoyaltyBonuses):
 		res.WriteHeader(http.StatusPaymentRequired)
 	case err != nil:
 		res.WriteHeader(http.StatusInternalServerError)

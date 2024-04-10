@@ -55,7 +55,9 @@ func (app *App) GetWithdrawalsInfo(ctx context.Context, userID int) (orders []mo
 // accrual system
 func (app *App) UpdateAccrualInfo(orderAccrualInfoChannel chan models.OrderAccrualInfo) {
 	for orderAccrualInfo := range orderAccrualInfoChannel {
-		app.db.UpdateAccrualInfo(orderAccrualInfo)
+		if orderAccrualInfo.OrderNumber != "" {
+			app.db.UpdateAccrualInfo(orderAccrualInfo)
+		}
 	}
 }
 
